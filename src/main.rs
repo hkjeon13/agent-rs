@@ -1,9 +1,9 @@
 use axum::{
     routing::post,
-    Router,
+    Router,Json
 };
-use serde::Deserialize;
 use std::{fs, net::SocketAddr};
+use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
 struct ServerConfig {
@@ -13,9 +13,7 @@ struct ServerConfig {
 
 #[derive(Deserialize)]
 struct RoutesConfig {
-    indexing: String,
-    search: String,
-    delete: String,
+    chat: String,
 }
 
 #[derive(Deserialize)]
@@ -23,6 +21,23 @@ struct Config {
     server: ServerConfig,
     routes: RoutesConfig,
 }
+
+#[derive(Deserialize)]
+struct ChatInput {
+    session_id: String,
+    chat_id: String,
+    name: String,
+    query: String,
+}
+
+#[derive(Serialize)]
+struct ChatOutput {
+    session_id: String,
+    chat_id: String,
+    name: String,
+    response: String,
+}
+
 
 #[tokio::main]
 async fn main() {
@@ -36,15 +51,24 @@ async fn main() {
         .unwrap();
 
     let app = Router::new()
-        .route(&config.routes.chat, post(indexing));
+        .route(&config.routes.chat, post(chat));
 
-    axum::Server::bind(&addr)
-        .serve(app.into_make_service())
-        .await
-        .unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+
+    axum::serve(listener, app).await.unwrap();
+
 }
 
 
-async fn chat() -> &'static str {
-    "indexing endpoint"
+async fn chat(
+    Json(input): Json<ChatInput>) -> Json<ChatOutput> {
+    let output = ChatOutput {
+        session_id: input.session_id,
+        chat_id: input.chat_id,
+        name: input.name,
+        response: input.query,
+    };
+    // TODO: Implement chatbot logic here
+
+    Json(output)
 }
