@@ -1,6 +1,7 @@
 use axum::{
     routing::post,
-    Router,Json
+    Router,Json,
+    http::StatusCode,
 };
 use std::{fs, net::SocketAddr};
 use serde::{Deserialize, Serialize};
@@ -61,14 +62,17 @@ async fn main() {
 
 
 async fn chat(
-    Json(input): Json<ChatInput>) -> Json<ChatOutput> {
+    Json(input): Json<ChatInput>) -> (StatusCode, Json<ChatOutput>) {
+    // Below is a simple echo response
     let output = ChatOutput {
         session_id: input.session_id,
         chat_id: input.chat_id,
         name: input.name,
         response: input.query,
     };
+
     // TODO: Implement chatbot logic here
 
-    Json(output)
+    (StatusCode::OK, Json(output))
+
 }
