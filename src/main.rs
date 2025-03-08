@@ -1,4 +1,5 @@
 mod agent;
+mod models;
 
 use async_openai::{
     config::OpenAIConfig,
