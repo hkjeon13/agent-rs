@@ -5,7 +5,17 @@ edition = "2021"
 
 
 [dependencies]
-axum = "*"
+axum = "0.8.1"
+axum-streams = { version = "0.20", features=["json", "csv", "protobuf", "text"] }
 tokio = { version = "1.43.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.5"
+tokio-stream = "0.1.17"
+futures = "0.3"
+async-openai = "*"
+hyper = "1.6.0"
+http-body-util = "0.1.2"
+bytes = "1.10.1"
+tracing = "0.1.41"
+tracing-appender = "0.2.3"
+tracing-subscriber = "0.3.19"
