@@ -64,7 +64,6 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
-    // tracing 구독자 초기화: 로그를 콘솔에 출력합니다.
     tracing_subscriber::fmt::init();
 
     let config_str = fs::read_to_string("config.toml")
@@ -106,13 +105,11 @@ async fn chat(
 
     info!("Session ID: {}, Chat ID: {}, Name: {}", input.session_id, input.chat_id, input.name);
 
-    // 사용자 메시지 구성
     let user_message = ChatCompletionRequestUserMessageArgs::default()
         .content(input.query)
         .build()
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
-    // 스트리밍 옵션 활성화
     let request = CreateChatCompletionRequestArgs::default()
         .model("gpt-4o")
         .messages(vec![user_message.into()])
@@ -120,7 +117,6 @@ async fn chat(
         .build()
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
-    // create_stream 메서드를 사용하여 스트림을 받아옵니다.
     let stream = client
         .chat()
         .create_stream(request)
@@ -128,7 +124,6 @@ async fn chat(
         .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
 
-    // 스트림의 각 청크에서 텍스트만 추출하여 Bytes로 변환합니다.
     let body_stream = stream
         .map(|chunk_result| -> Result<Bytes, std::convert::Infallible> {
             match chunk_result {
@@ -145,7 +140,6 @@ async fn chat(
         })
         .boxed();
 
-    // axum::body::Body::from_stream을 사용하여 스트림 바디를 생성합니다.
     let body = Body::from_stream(body_stream);
     let response = Response::builder()
         .header("Content-Type", "text/plain")
