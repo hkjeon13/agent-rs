@@ -12,7 +12,6 @@ struct Agent<M: Model> {
 
 
 impl Agent {
-
     fn new(model: M, max_steps: usize) -> Self {
         Self {
             model,

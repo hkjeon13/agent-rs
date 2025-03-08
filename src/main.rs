@@ -1,6 +1,9 @@
 // src/main.rs
 
 mod models;
+mod utils;
+mod actions;
+mod state;
 
 use axum::{
     extract::State,
@@ -120,7 +123,7 @@ async fn chat(
     info!("Session ID: {}, Chat ID: {}, Name: {}", input.session_id, input.chat_id, input.name);
 
     if input.stream {
-        let body_stream = state.model.generate_stream(&input.query).await?;
+        let body_stream = state.model.async_generate_stream(&input.query).await?;
         let body = Body::from_stream(body_stream);
         let response = Response::builder()
             .header("Content-Type", "text/plain")

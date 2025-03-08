@@ -14,7 +14,7 @@ use axum::http::StatusCode;
 
 #[async_trait]
 pub trait Model: Send + Sync {
-    async fn generate_stream(
+    async fn async_generate_stream(
         &self,
         input: &str,
     ) -> Result<
@@ -23,7 +23,7 @@ pub trait Model: Send + Sync {
     >;
 
     async fn async_generate(&self, input: &str) -> String {
-        let stream = self.generate_stream(input)
+        let stream = self.async_generate_stream(input)
             .await
             .expect("Failed to generate stream");
 
@@ -58,7 +58,7 @@ impl OpenAIModel {
 
 #[async_trait]
 impl Model for OpenAIModel {
-    async fn generate_stream(
+    async fn async_generate_stream(
         &self,
         input: &str,
     ) -> Result<
