@@ -1,3 +1,5 @@
+mod agent;
+
 use async_openai::{
     config::OpenAIConfig,
     types::{CreateChatCompletionRequestArgs, ChatCompletionRequestUserMessageArgs},
