@@ -4,3 +4,8 @@ port = 3000
 
 [routes]
 chat = "/chat"
+
+
+[model]
+model_type = "openai"
+model_name = "gpt-4o"

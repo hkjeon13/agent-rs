@@ -1,27 +1,41 @@
-// Module: Agent, MultiStepAgent, CodeAgent
-// This concepts of modules and traits is inspired by the github repo: https://github.com/huggingface/smolagents.git (MIT License, written in Python)
+use models::Model;
 
-
-trait LMModel {
-    fn predict(&self, input: &str) -> String;
+trait Agent {
+    fn run(&self, input: &str) -> String;
+    fn step(&self, state: &str) -> String;
 }
 
-trait Tokenizer {
-    fn tokenize(&self, input: &str) -> Vec<String>;
-}
-
-struct Agent<M: LMModel, T: Tokenizer> {
+struct Agent<M: Model> {
     model: M,
-    tokenizer: T,
-    prompt: String,
+    max_steps: usize,
 }
 
-struct MultiStepAgent<M: LMModel, T: Tokenizer> {
-    agent: Agent<M, T>
+
+impl Agent {
+
+    fn new(model: M, max_steps: usize) -> Self {
+        Self {
+            model,
+            max_steps,
+        }
+    }
+
+    fn new(model: M) -> Self {
+        Self {
+            model,
+            max_steps: 10,
+        }
+    }
 }
 
-struct CodeAgent<M: LMModel, T: Tokenizer> {
-    agent: MultiStepAgent<M, T>
+impl Agent {
+    fn run(&self, input: &str) -> String {
+        self.model.generate(input)
+    }
+
+    fn step(&self, state: &str) -> String {
+        self.model.generate(state)
+    }
 }
 
 

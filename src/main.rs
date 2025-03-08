@@ -1,11 +1,7 @@
-mod agent;
+// src/main.rs
+
 mod models;
 
-use async_openai::{
-    config::OpenAIConfig,
-    types::{CreateChatCompletionRequestArgs, ChatCompletionRequestUserMessageArgs},
-    Client,
-};
 use axum::{
     extract::State,
     http::StatusCode,
@@ -14,14 +10,16 @@ use axum::{
     Json,
     Router,
 };
-use futures::StreamExt;
-use axum::body::Body; // axum의 Body를 사용합니다.
-use bytes::Bytes;
+use axum::body::Body;
 use serde::Deserialize;
-use std::{fs, net::SocketAddr, sync::Arc};
+use std::{
+    fs,
+    net::SocketAddr,
+    sync::Arc,
+};
 use tracing::info;
 use tracing_subscriber;
-use std::time::Instant;
+use models::{Model, OpenAIModel};
 
 #[derive(Deserialize)]
 struct ServerConfig {
@@ -35,9 +33,16 @@ struct RoutesConfig {
 }
 
 #[derive(Deserialize)]
+struct ModelConfig {
+    model_type: String,
+    model_name: String,
+}
+
+#[derive(Deserialize)]
 struct Config {
     server: ServerConfig,
     routes: RoutesConfig,
+    model: ModelConfig,
 }
 
 #[derive(Deserialize)]
@@ -56,10 +61,12 @@ struct ChatInput {
     chat_id: String,
     name: String,
     query: String,
+    stream: bool,
 }
 
+// AppState now holds a Box<dyn Model>
 struct AppState {
-    client: Client<OpenAIConfig>,
+    model: Box<dyn Model>,
 }
 
 #[tokio::main]
@@ -76,10 +83,18 @@ async fn main() {
     let secrets: Secrets = toml::from_str(&secrets_str)
         .expect("Failed to parse secrets file");
 
-    let openai_config = OpenAIConfig::new().with_api_key(secrets.openai.api_key);
-    let client: Client<OpenAIConfig> = Client::with_config(openai_config);
+    // Choose the model based on configuration.
+    let model = match config.model.model_type.as_str() {
+        "openai" => {
+            info!("OpenAI model selected");
+            OpenAIModel::new(secrets.openai.api_key, config.model.model_name)
+        }
+        _ => panic!("Unsupported model type"),
+    };
 
-    let state = Arc::new(AppState { client });
+    let state = Arc::new(AppState {
+        model: Box::new(model),
+    });
 
     let app = Router::new()
         .route(&config.routes.chat, post(chat))
@@ -89,7 +104,9 @@ async fn main() {
         .parse::<SocketAddr>()
         .unwrap();
 
-    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .unwrap();
 
     axum::serve(listener, app.into_make_service())
         .await
@@ -100,51 +117,22 @@ async fn chat(
     State(state): State<Arc<AppState>>,
     Json(input): Json<ChatInput>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-
-    let client = &state.client;
-
     info!("Session ID: {}, Chat ID: {}, Name: {}", input.session_id, input.chat_id, input.name);
 
-    let user_message = ChatCompletionRequestUserMessageArgs::default()
-        .content(input.query)
-        .build()
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
-
-    let request = CreateChatCompletionRequestArgs::default()
-        .model("gpt-4o")
-        .messages(vec![user_message.into()])
-        .stream(true)
-        .build()
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
-
-    let stream = client
-        .chat()
-        .create_stream(request)
-        .await
-        .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
-
-
-    let body_stream = stream
-        .map(|chunk_result| -> Result<Bytes, std::convert::Infallible> {
-            match chunk_result {
-                Ok(chunk) => {
-                    let text = chunk.choices[0]
-                        .delta
-                        .content
-                        .clone()
-                        .unwrap_or_default();
-                    Ok(Bytes::from(text))
-                }
-                Err(e) => Ok(Bytes::from(format!("\n[Error: {}]\n", e))),
-            }
-        })
-        .boxed();
-
-    let body = Body::from_stream(body_stream);
-    let response = Response::builder()
-        .header("Content-Type", "text/plain")
-        .body(body)
-        .unwrap();
-
-    Ok(response)
+    if input.stream {
+        let body_stream = state.model.generate_stream(&input.query).await?;
+        let body = Body::from_stream(body_stream);
+        let response = Response::builder()
+            .header("Content-Type", "text/plain")
+            .body(body)
+            .unwrap();
+        Ok(response)
+    } else {
+        let output = state.model.async_generate(&input.query).await;
+        let response = Response::builder()
+            .header("Content-Type", "text/plain")
+            .body(Body::from(output))
+            .unwrap();
+        Ok(response)
+    }
 }
