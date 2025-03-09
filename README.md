@@ -1,19 +1,18 @@
 # agent-rs
 LLM Agent Built in Rust
 
-
-## Settings
-
-## OpenAI API Key
-To use the OpenAI API, you need make 'secrets.toml' file in the root directory of the project and add the following lines:
+## Setup
+### OpenAI API Key
+Create a `secrets.toml` file in the project root and add:
 ```toml
 [openai]
 api_key= "sk-<your-api-key>"
 ```
 
-## Running the agent
-To run the agent, you need to run the following command:
+### Running the Agent
 ```bash
 cargo run --release
 ```
-(not yet implemented, this is just a example)
+
+## Status
+Current version supports only OpenAI's `/chat` API (not fully agentic).
