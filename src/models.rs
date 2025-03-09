@@ -1,30 +1,38 @@
 use std::{
     convert::Infallible,
     pin::Pin,
+    collections::HashMap
 };
 
 use async_openai::{
     Client,
     config::OpenAIConfig,
-    types::{ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs},
+    types::{
+        ChatCompletionRequestMessage,
+        ChatCompletionRequestUserMessageArgs,
+        ChatCompletionRequestAssistantMessageArgs,
+        ChatCompletionRequestSystemMessageArgs,
+        CreateChatCompletionRequestArgs
+    },
 };
 use async_trait::async_trait;
 use axum::http::StatusCode;
 use bytes::Bytes;
 use futures::{stream::BoxStream, StreamExt};
 
+
 #[async_trait]
 pub trait Model: Send + Sync {
     async fn async_generate_stream(
         &self,
-        input: &str,
+        messages: Vec<HashMap<String, String>>,
     ) -> Result<
         Pin<Box<dyn futures::Stream<Item=Result<Bytes, Infallible>> + Send>>,
         (StatusCode, String),
     >;
 
-    async fn async_generate(&self, input: &str) -> String {
-        let stream = self.async_generate_stream(input)
+    async fn async_generate(&self, messages:Vec<HashMap<String, String>>) -> String {
+        let stream = self.async_generate_stream(messages)
             .await
             .expect("Failed to generate stream");
 
@@ -36,12 +44,22 @@ pub trait Model: Send + Sync {
         }
         output
     }
+
 }
 
 
 pub struct OpenAIModel {
     pub model_name: String,
     pub client: Client<OpenAIConfig>,
+}
+
+impl OpenAIModel {
+    pub(crate) fn clone(&self) -> Self {
+        Self {
+            model_name: self.model_name.clone(),
+            client: self.client.clone(),
+        }
+    }
 }
 
 impl OpenAIModel {
@@ -55,39 +73,78 @@ impl OpenAIModel {
             client,
         }
     }
+
+    fn prepare_inputs(&self, inputs: Vec<HashMap<String, String>>) -> Vec<ChatCompletionRequestMessage> {
+        let mut outputs:Vec<ChatCompletionRequestMessage> = Vec::new();
+        for input in inputs {
+            let message = match input.get("role") {
+                Some(role) => {
+                    match role.as_str() {
+                        "user" => {
+                            ChatCompletionRequestUserMessageArgs::default()
+                                .content(input.get("content").unwrap_or(&"".to_string()).to_string())
+                                .build()
+                                .expect("Failed to build user message")
+                                .into()
+                        }
+                        "assistant" => {
+                            ChatCompletionRequestAssistantMessageArgs::default()
+                                .content(input.get("content").unwrap_or(&"".to_string()).to_string())
+                                .build()
+                                .expect("Failed to build assistant message")
+                                .into()
+                        }
+                        "system" => {
+                            ChatCompletionRequestSystemMessageArgs::default()
+                                .content(input.get("content").unwrap_or(&"".to_string()).to_string())
+                                .build()
+                                .expect("Failed to build system message")
+                                .into()
+                        }
+                        _ => {
+                            panic!("Invalid role type(only 'user', 'assistant', 'system' are allowed)")
+                        }
+                    }
+                }
+
+                None => {
+                    panic!("Role not found")
+                }
+
+            };
+            outputs.push(message);
+        }
+        outputs
+    }
 }
+
 
 #[async_trait]
 impl Model for OpenAIModel {
+
     async fn async_generate_stream(
         &self,
-        input: &str,
+        messages: Vec<HashMap<String, String>>,
     ) -> Result<
         Pin<Box<dyn futures::Stream<Item=Result<Bytes, Infallible>> + Send>>,
         (StatusCode, String),
     > {
         // 사용자 메시지 구성
-        let user_message = ChatCompletionRequestUserMessageArgs::default()
-            .content(input)
-            .build()
-            .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
-
+        let input_messages = self.prepare_inputs(messages);
         // 스트리밍 요청 생성
         let request = CreateChatCompletionRequestArgs::default()
             .model(&self.model_name)
-            .messages(vec![user_message.into()])
+            .messages(input_messages)
             .stream(true)
             .build()
             .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
-        // 미리 생성된 클라이언트를 사용하여 스트림 생성
         let stream = self.client
             .chat()
             .create_stream(request)
             .await
             .map_err(|err| (StatusCode::INTERNAL_SERVER_ERROR, err.to_string()))?;
 
-        // 각 청크에서 텍스트를 추출하여 Bytes로 변환하는 스트림 생성
         let body_stream: BoxStream<Result<Bytes, Infallible>> = stream
             .map(|chunk_result| -> Result<Bytes, Infallible> {
                 match chunk_result {
