@@ -29,14 +29,17 @@ impl Agent {
 
 impl Agent {
     fn run(&self, input: &str) -> String {
-        self.model.generate(input)
+        let mut state = input.to_string();
+        for _ in 0..self.max_steps {
+            state = self.step(&state);
+        }
+        state
     }
 
     fn step(&self, state: &str) -> String {
         self.model.generate(state)
     }
 }
-
 
 
 

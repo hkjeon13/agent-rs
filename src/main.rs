@@ -1,9 +1,9 @@
 // src/main.rs
 
 mod models;
-mod utils;
 mod actions;
 mod state;
+mod tools;
 
 use axum::{
     extract::State,
@@ -120,6 +120,7 @@ async fn chat(
     State(state): State<Arc<AppState>>,
     Json(input): Json<ChatInput>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+
     info!("Session ID: {}, Chat ID: {}, Name: {}", input.session_id, input.chat_id, input.name);
 
     if input.stream {
@@ -130,6 +131,7 @@ async fn chat(
             .body(body)
             .unwrap();
         Ok(response)
+
     } else {
         let output = state.model.async_generate(&input.query).await;
         let response = Response::builder()
