@@ -1,86 +1,133 @@
-use serde_json::{Value, Map, from_str};
+use std::collections::HashMap;
+use std::process::Command;
 
-pub struct State {
-    step_number: u32,
-    available_actions: Vec<Action>,
-    selected_action: Option<Action>,
+use async_trait::async_trait;
+use tracing::info;
+
+use crate::observation::Observation;
+
+#[derive(Clone, Debug)]
+pub struct Parameter {
+    pub name: String,
+    pub dtype: String,
+    pub description: String,
 }
 
-#[derive(Clone)]
-pub struct ActionParameter {
-    name: String,
-    value_type: String,
-    default: String,
+#[derive(Clone, Debug)]
+pub struct ActionInput {
+    pub key: String,
+    pub value: String,
+    pub dtype: String,
 }
 
-pub struct Action {
-    name: String,
-    parameters: Vec<ActionParameter>,
-    inputs: Vec<ActionParameter>,
-    outputs: String,
+#[async_trait]
+pub trait Action {
+    async fn act(&self, inputs: Vec<ActionInput>) -> Observation;
+    fn get_parameters(&self) -> &Vec<Parameter>;
+    fn prepare_inputs(&self, inputs: Vec<ActionInput>) -> HashMap<String, ActionInput> {
+        self.get_parameters().iter().filter_map(|param| {
+            inputs.iter().find(|input| {
+                param.name == input.key && param.dtype.eq_ignore_ascii_case(&input.dtype)
+            }).map(|input| (param.name.clone(), input.clone()))
+        }).collect()
+    }
 }
 
-impl State {
-    pub fn new(step_number: u32, available_actions: Vec<Action>) -> Self {
+
+pub struct NaverNewsSearchAction {
+    pub name: String,
+    pub description: String,
+    pub parameters: Vec<Parameter>,
+    pub client_id: String,
+    pub client_secret: String,
+}
+
+pub struct DuckDuckGoSearchAction {
+    pub name: String,
+    pub description: String,
+    pub parameters: Vec<Parameter>,
+}
+
+
+impl NaverNewsSearchAction {
+    pub fn new(client_id: String, client_secret: String) -> Self {
         Self {
-            step_number,
-            available_actions,
-            selected_action: None,
-        }
-    }
-
-    pub fn select_action(&mut self, action: Action) {
-        self.selected_action = Some(action);
-    }
-}
-
-
-impl Action {
-    fn new(name: String, parameters:Vec<ActionParameter>) -> Self {
-        Self {
-            name,
-            parameters,
-            inputs: Vec::new(),
-            outputs: String::new(),
-        }
-    }
-
-    pub fn set_outputs(&mut self, outputs: String) {
-        self.outputs = outputs;
-    }
-
-    fn set_parameters(&mut self, parameters: Vec<ActionParameter>) {
-        self.parameters = parameters;
-    }
-
-    fn parse_parameters(&self, inputs: String) -> Vec<ActionParameter> {
-        let input_json:Value = from_str(&inputs).expect("Failed to parse inputs");
-        let input_map:Map<String, Value> = input_json.as_object().expect("Failed to parse inputs").clone();
-        let mut parameters:Vec<ActionParameter> = Vec::new();
-        for parameter in self.parameters.iter() {
-            let value = input_map.get(&parameter.name).expect("Failed to get parameter value");
-            let value_type = value.as_str().expect("Failed to get value type");
-            let default_value = parameter.default.clone();
-
-            parameters.push(ActionParameter {
-                name: parameter.name.clone(),
-                value_type: value_type.to_string(),
-                default: default_value,
-            });
-        }
-        parameters
-    }
-
-    pub fn act(&self, inputs: String) -> Self {
-        let parameters: Vec<ActionParameter> = self.parse_parameters(inputs);
-        Self {
-            name: self.name.clone(),
-            parameters: self.parameters.clone(),
-            inputs: parameters,
-            outputs: self.outputs.clone(),
+            name: "NaverNewsSearchAction".to_string(),
+            description: "Search News in www.naver.com".to_string(),
+            parameters: vec![
+                Parameter {
+                    name: "query".to_string(),
+                    dtype: "String".to_string(),
+                    description: "Search query".to_string(),
+                },
+                Parameter {
+                    name: "display".to_string(),
+                    dtype: "Integer".to_string(),
+                    description: "Number of results to display".to_string(),
+                },
+            ],
+            client_id,
+            client_secret,
         }
     }
 }
 
+
+impl DuckDuckGoSearchAction {
+    pub fn new() -> Self {
+        Self {
+            name: "DuckDuckGoSearchAction".to_string(),
+            description: "Search the web using DuckDuckGo".to_string(),
+            parameters: vec![
+                Parameter {
+                    name: "query".to_string(),
+                    dtype: "String".to_string(),
+                    description: "Search query".to_string(),
+                },
+            ],
+        }
+    }
+}
+
+
+#[async_trait]
+impl Action for NaverNewsSearchAction {
+    fn get_parameters(&self) -> &Vec<Parameter> {
+        &self.parameters
+    }
+
+    async fn act(&self, inputs: Vec<ActionInput>) -> Observation {
+        info!("NaverNewsSearchAction.act() called");
+        let matched_inputs = self.prepare_inputs(inputs);
+
+        Observation {
+            result: format!("Matched {} input(s)", matched_inputs.len()),
+        }
+    }
+}
+
+
+#[async_trait]
+impl Action for DuckDuckGoSearchAction {
+    fn get_parameters(&self) -> &Vec<Parameter> {
+        &self.parameters
+    }
+
+    async fn act(&self, inputs: Vec<ActionInput>) -> Observation {
+        info!("DuckDuckGoSearchAction.act() called");
+        let matched_inputs = self.prepare_inputs(inputs);
+        let query = matched_inputs.get("query").unwrap().value.clone();
+        let output = Command::new("duckduckgo")
+            .arg(format!("--query={}", query))
+            .output()
+            .expect("Failed to execute command");
+
+        let stdout_str = String::from_utf8_lossy(&output.stdout);
+
+        Observation {
+            result: stdout_str.to_string(),
+        }
+    }
+}
 
 

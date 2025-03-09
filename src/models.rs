@@ -1,16 +1,17 @@
-use async_openai::{
-    config::OpenAIConfig,
-    types::{CreateChatCompletionRequestArgs, ChatCompletionRequestUserMessageArgs},
-    Client,
-};
-use async_trait::async_trait;
-use bytes::Bytes;
-use futures::{StreamExt, stream::BoxStream};
 use std::{
     convert::Infallible,
     pin::Pin,
 };
+
+use async_openai::{
+    Client,
+    config::OpenAIConfig,
+    types::{ChatCompletionRequestUserMessageArgs, CreateChatCompletionRequestArgs},
+};
+use async_trait::async_trait;
 use axum::http::StatusCode;
+use bytes::Bytes;
+use futures::{stream::BoxStream, StreamExt};
 
 #[async_trait]
 pub trait Model: Send + Sync {
@@ -18,7 +19,7 @@ pub trait Model: Send + Sync {
         &self,
         input: &str,
     ) -> Result<
-        Pin<Box<dyn futures::Stream<Item = Result<Bytes, Infallible>> + Send>>,
+        Pin<Box<dyn futures::Stream<Item=Result<Bytes, Infallible>> + Send>>,
         (StatusCode, String),
     >;
 
@@ -62,7 +63,7 @@ impl Model for OpenAIModel {
         &self,
         input: &str,
     ) -> Result<
-        Pin<Box<dyn futures::Stream<Item = Result<Bytes, Infallible>> + Send>>,
+        Pin<Box<dyn futures::Stream<Item=Result<Bytes, Infallible>> + Send>>,
         (StatusCode, String),
     > {
         // 사용자 메시지 구성

@@ -1,4 +1,3 @@
-
 pub struct Memory {
-    states: Vec<crate::actions::State>,
+    states: Vec<crate::states::State>,
 }

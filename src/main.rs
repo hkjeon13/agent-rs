@@ -1,27 +1,31 @@
 // src/main.rs
 
-mod models;
-mod actions;
-mod memory;
-
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::{IntoResponse, Response},
-    routing::post,
-    Json,
-    Router,
-};
-use axum::body::Body;
-use serde::Deserialize;
 use std::{
     fs,
     net::SocketAddr,
     sync::Arc,
 };
+
+use axum::{
+    extract::State,
+    http::StatusCode,
+    Json,
+    response::{IntoResponse, Response},
+    Router,
+    routing::post,
+};
+use axum::body::Body;
+use serde::Deserialize;
 use tracing::info;
 use tracing_subscriber;
+
 use models::{Model, OpenAIModel};
+
+mod models;
+mod states;
+mod memory;
+mod actions;
+mod observation;
 
 #[derive(Deserialize)]
 struct ServerConfig {
@@ -119,7 +123,6 @@ async fn chat(
     State(state): State<Arc<AppState>>,
     Json(input): Json<ChatInput>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
-
     info!("Session ID: {}, Chat ID: {}, Name: {}", input.session_id, input.chat_id, input.name);
 
     if input.stream {
@@ -130,7 +133,6 @@ async fn chat(
             .body(body)
             .unwrap();
         Ok(response)
-
     } else {
         let output = state.model.async_generate(&input.query).await;
         let response = Response::builder()
