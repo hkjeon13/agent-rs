@@ -9,8 +9,12 @@ use crate::prompts::{load_config, Prompt};
 pub trait AgentBase {
     async fn run(&self, input: &str) -> String;
     async fn step(&self, state: &str) -> String;
-    async fn plan(&self, state: &str, step: usize, is_initial: bool) -> String;
+    async fn plan(&self, state: &str, step: usize, is_initial: bool) -> String {
+        let facts_messages = self.generate_facts(state, is_initial).await;
+        self.generate_plan(state, step, &facts_messages, is_initial).await
+    }
     async fn generate_facts(&self, state: &str, is_initial: bool) -> String;
+    async fn generate_plan(&self, state: &str, step: usize, facts: &str, is_initial: bool) -> String;
 }
 
 pub struct Agent<M: Model> {
@@ -65,8 +69,7 @@ impl<M: Model + Send + Sync> AgentBase for Agent<M> {
         self.model.async_generate(facts_messages).await
     }
 
-    async fn plan(&self, state: &str, step: usize, is_initial: bool) -> String {
-        let facts_messages = self.generate_facts(state, is_initial).await;
+    async fn generate_plan(&self, state: &str, step: usize, facts: &str, is_initial: bool) -> String {
 
         let tools_str = self.available_actions
             .iter()
@@ -82,7 +85,7 @@ impl<M: Model + Send + Sync> AgentBase for Agent<M> {
                 .replace("{task}", state)
                 .replace("{tools}", &tools_str)
                 .replace("{managed_agents}", &managed_agents)
-                .replace("{answer_facts}", &facts_messages)
+                .replace("{answer_facts}", facts)
             )]
         } else {
             vec![
@@ -93,7 +96,7 @@ impl<M: Model + Send + Sync> AgentBase for Agent<M> {
                         .replace("{task}", state)
                         .replace("{tools}", &tools_str)
                         .replace("{managed_agents}", &managed_agents)
-                        .replace("{facts_update}", &facts_messages)
+                        .replace("{facts_update}", facts)
                         .replace("{remaining_steps}", &(self.max_steps - step).to_string())
                 ),
             ]
@@ -101,4 +104,6 @@ impl<M: Model + Send + Sync> AgentBase for Agent<M> {
 
         self.model.async_generate(plan_messages).await
     }
+
+
 }
