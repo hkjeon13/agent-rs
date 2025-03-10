@@ -111,7 +111,9 @@ async fn main() {
         1,
         vec![
             Box::new(actions::DuckDuckGoSearchAction::new()),
-            Box::new(actions::NaverNewsSearchAction::new(secrets.naver.client_id.clone(), secrets.naver.client_secret.clone()))
+            Box::new(actions::NaverNewsSearchAction::new(
+                secrets.naver.client_id.clone(), secrets.naver.client_secret.clone()
+            ))
         ]
     );
 
@@ -146,8 +148,8 @@ async fn chat(
         input.session_id, input.chat_id, input.name
     );
 
-    let agent_outputs = state.agent.run(&input.query).await;
-    info!("Agent response: {}", agent_outputs);
+    //let agent_outputs = state.agent.run(&input.query).await;
+    //info!("Agent response: {}", agent_outputs);
 
     let inputs = vec![HashMap::from([
         ("role".to_string(), "user".to_string()),
