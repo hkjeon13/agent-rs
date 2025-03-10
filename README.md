@@ -6,7 +6,11 @@ LLM Agent Built in Rust
 Create a `secrets.toml` file in the project root and add:
 ```toml
 [openai]
-api_key= "sk-<your-api-key>"
+api_key= "sk-1234567890"
+
+[naver]
+client_id = "client_id"
+client_secret = "client_secret"
 ```
 
 ### Running the Agent
