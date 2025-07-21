@@ -12,10 +12,7 @@ pub struct Prompt {
 
 #[derive(Debug, Deserialize)]
 pub struct Planning {
-    pub initial_facts: String,
     pub initial_plan: String,
-    pub update_facts_pre_messages: String,
-    pub update_facts_post_messages: String,
     pub update_plan_pre_messages: String,
     pub update_plan_post_messages: String,
 }
