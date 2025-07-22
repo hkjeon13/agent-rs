@@ -4,7 +4,6 @@ use crate::models::Model;
 use crate::prompts::{load_config, Prompt};
 use async_stream::stream;
 use async_trait::async_trait;
-use futures::stream::once;
 use futures::stream::Stream;
 use futures::stream::StreamExt;
 use std::collections::HashMap;
@@ -28,7 +27,7 @@ pub trait AgentBase {
         images: Vec<String>,
     ) -> Pin<Box<dyn Stream<Item = String> + Send + 'static>>;
     async fn step(&self, state: &str) -> String;
-    async fn plan(&self, state: &str, step: usize, is_initial: bool) -> PlanOutput;
+    async fn plan(&self, state: &str, is_initial: bool) -> PlanOutput;
 }
 
 pub struct Agent<M: Model> {
@@ -82,7 +81,7 @@ impl<M: Model + Send + Sync + Clone + 'static> AgentBase for Agent<M> {
             for step in 1..=max_steps {
                 let task_str = task.clone();
                 // Planning phase
-                let plan_output = self.plan(&task_str, step, step == 1).await;
+                let plan_output = self.plan(&task_str, step == 1).await;
                 let mut plan_stream = match plan_output {
                     PlanOutput::Stream(s) => s,
                     PlanOutput::Text(t) => Box::pin(stream! { yield t.clone() }),
@@ -135,9 +134,8 @@ impl<M: Model + Send + Sync + Clone + 'static> AgentBase for Agent<M> {
         "Agent::step() not implemented".to_string()
     }
 
-    async fn plan(&self, state: &str, step: usize, is_initial: bool) -> PlanOutput {
+    async fn plan(&self, state: &str, is_initial: bool) -> PlanOutput {
         let start = Instant::now();
-
         let tools_str = self
             .available_actions
             .iter()

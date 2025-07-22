@@ -3,8 +3,6 @@
 use std::fs;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::collections::HashMap;
-use bytes::Bytes;
 use futures::StreamExt;
 use std::convert::Infallible;
 
@@ -106,6 +104,8 @@ async fn main() {
         secrets.openai.api_key.clone(),
         config.model.model_name.clone(),
     );
+
+    info!("Using OpenAI model: {} (type: {})", openai_model.model_name, config.model.model_type);
 
     let agent = agents::Agent::new(
         openai_model.clone(),
