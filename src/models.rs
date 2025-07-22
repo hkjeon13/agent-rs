@@ -53,8 +53,9 @@ pub struct OpenAIModel {
     pub client: Client<OpenAIConfig>,
 }
 
-impl OpenAIModel {
-    pub(crate) fn clone(&self) -> Self {
+
+impl Clone for OpenAIModel {
+    fn clone(&self) -> Self {
         Self {
             model_name: self.model_name.clone(),
             client: self.client.clone(),

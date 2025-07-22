@@ -1,11 +1,12 @@
 // src/main.rs
 
-use std::{
-    fs,
-    net::SocketAddr,
-    sync::Arc,
-    collections::HashMap,
-};
+use std::fs;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::collections::HashMap;
+use bytes::Bytes;
+use futures::StreamExt;
+use std::convert::Infallible;
 
 use axum::{
     extract::State,
@@ -108,13 +109,14 @@ async fn main() {
 
     let agent = agents::Agent::new(
         openai_model.clone(),
-        1,
+        3,
         vec![
             Box::new(actions::DuckDuckGoSearchAction::new()),
             Box::new(actions::NaverNewsSearchAction::new(
                 secrets.naver.client_id.clone(), secrets.naver.client_secret.clone()
             ))
-        ]
+        ],
+        true, // Enable streaming outputs
     );
 
     let state = Arc::new(AppState {
@@ -148,27 +150,28 @@ async fn chat(
         input.session_id, input.chat_id, input.name
     );
 
-    //let agent_outputs = state.agent.run(&input.query).await;
-    //info!("Agent response: {}", agent_outputs);
-
-    let inputs = vec![HashMap::from([
-        ("role".to_string(), "user".to_string()),
-        ("content".to_string(), input.query.clone()),
-    ])];
+    // Execute the agent, which yields a stream of text chunks
+    let query = input.query.clone();
+    let mut stream = state.agent.run(query).await;
 
     if input.stream {
-        let body_stream = state.model.async_generate_stream(inputs).await?;
+        // Stream chunks directly as SSE-like plain text
+        let byte_stream = stream.map(|chunk| Ok::<_, Infallible>(chunk.into_bytes()));
         let response = Response::builder()
             .header("Content-Type", "text/plain")
-            .body(Body::from_stream(body_stream))
+            .body(Body::from_stream(byte_stream))
             .unwrap();
-        Ok(response)
-    } else {
-        let output = state.model.async_generate(inputs).await;
-        let response = Response::builder()
-            .header("Content-Type", "text/plain")
-            .body(Body::from(output))
-            .unwrap();
-        Ok(response)
+        return Ok(response);
     }
+
+    // Otherwise, accumulate all chunks into a full text response
+    let mut full_text = String::new();
+    while let Some(chunk) = stream.next().await {
+        full_text.push_str(&chunk);
+    }
+    let response = Response::builder()
+        .header("Content-Type", "text/plain")
+        .body(Body::from(full_text))
+        .unwrap();
+    Ok(response)
 }
