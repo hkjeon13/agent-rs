@@ -82,7 +82,7 @@ struct ChatInput {
 }
 
 struct AppState {
-    agent: Box<dyn agents::AgentBase + Send + Sync>,
+    agent: Arc<dyn agents::AgentBase + Send + Sync + 'static>,
     model: Box<dyn Model + Send + Sync>,
 }
 
@@ -120,7 +120,7 @@ async fn main() {
     );
 
     let state = Arc::new(AppState {
-        agent: Box::new(agent),
+        agent: Arc::new(agent) as Arc<dyn agents::AgentBase + Send + Sync + 'static>,
         model: Box::new(openai_model),
     });
 
@@ -152,7 +152,7 @@ async fn chat(
 
     // Execute the agent, which yields a stream of text chunks
     let query = input.query.clone();
-    let mut stream = state.agent.run(query).await;
+    let mut stream = state.agent.clone().run(query).await;
 
     if input.stream {
         // Stream chunks directly as SSE-like plain text

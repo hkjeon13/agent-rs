@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::actions::Action;
 use crate::models::Model;
 use crate::prompts::{load_config, Prompt};
@@ -5,7 +6,7 @@ use async_stream::stream;
 use async_trait::async_trait;
 use futures::stream::once;
 use futures::stream::Stream;
-use futures::StreamExt;
+use futures::stream::StreamExt;
 use std::collections::HashMap;
 use std::pin::Pin;
 use std::time::Instant;
@@ -19,13 +20,13 @@ pub enum PlanOutput {
 
 #[async_trait]
 pub trait AgentBase {
-    async fn run(&self, input: String) -> Pin<Box<dyn Stream<Item = String> + Send>>;
+    async fn run(self: Arc<Self>, input: String) -> Pin<Box<dyn Stream<Item = String> + Send + 'static>>;
     async fn _run_stream(
-        &self,
+        self: Arc<Self>,
         task: String,
         max_steps: usize,
         images: Vec<String>,
-    ) -> Pin<Box<dyn Stream<Item = String> + Send>>;
+    ) -> Pin<Box<dyn Stream<Item = String> + Send + 'static>>;
     async fn step(&self, state: &str) -> String;
     async fn plan(&self, state: &str, step: usize, is_initial: bool) -> PlanOutput;
 }
@@ -62,74 +63,72 @@ impl<M: Model> Agent<M> {
 
 #[async_trait]
 impl<M: Model + Send + Sync + Clone + 'static> AgentBase for Agent<M> {
-    async fn run(&self, query: String) -> Pin<Box<dyn Stream<Item = String> + Send>> {
+    async fn run(self: Arc<Self>, query: String) -> Pin<Box<dyn Stream<Item = String> + Send + 'static>> {
         info!("Agent::run() called with query: {}", query);
-        self._run_stream(query.clone(), self.max_steps, vec![]).await
+        let agent = self.clone();
+        let max_steps = agent.max_steps;
+        agent._run_stream(query.clone(), max_steps, vec![]).await
     }
 
     async fn _run_stream(
-        &self,
+        self: Arc<Self>,
         task: String,
         max_steps: usize,
         _images: Vec<String>,
-    ) -> Pin<Box<dyn Stream<Item = String> + Send>> {
-        // Clone model and flag so closure owns them
+    ) -> Pin<Box<dyn Stream<Item = String> + Send + 'static>> {
         let model = self.model.clone();
         let stream_outputs = self.stream_outputs;
-        let task_str = task.clone();
-        // Get the raw planning output as a stream
-        let plan_output = self.plan(&task_str, 1, true).await;
-        let mut plan_stream = match plan_output {
-            PlanOutput::Stream(s) => s,
-            PlanOutput::Text(t) => Box::pin(stream! { yield t.clone() }),
-        };
-        let combined = stream! {
-            // Accumulate plan text while streaming
-            let mut buf = String::new();
-            while let Some(chunk) = plan_stream.next().await {
-                buf.push_str(&chunk);
-                yield chunk;
-            }
-            // Build the full plan_for_generation
-            let plan_for_generation = format!(
-                "Here are the facts I know and the plan of action that I will follow to solve the task:\n```\n{}\n```",
-                buf
-            );
-            info!("Plan for generation: {}", plan_for_generation);
-
-            // Prepare messages
-            let mut messages = Vec::new();
-            messages.push(HashMap::from([
-                ("role".to_string(), "system".to_string()),
-                ("content".to_string(), plan_for_generation.clone()),
-            ]));
-            messages.push(HashMap::from([
-                ("role".to_string(), "user".to_string()),
-                ("content".to_string(), task_str.to_string()),
-            ]));
-
-            // Stream or generate model output
-            if stream_outputs {
-                // Unified boxed stream
-                let mut model_stream = match model.async_generate_stream(messages.clone()).await {
-                    Ok(raw) => raw.map(|res| {
-                        let bytes = res.unwrap_or_default();
-                        String::from_utf8_lossy(&bytes).to_string()
-                    }).boxed(),
-                    Err(err) => {
-                        info!("Generation stream error: {:?}", err);
-                        stream! { yield String::new() }.boxed()
-                    }
+        Box::pin(stream! {
+            for step in 1..=max_steps {
+                let task_str = task.clone();
+                // Planning phase
+                let plan_output = self.plan(&task_str, step, step == 1).await;
+                let mut plan_stream = match plan_output {
+                    PlanOutput::Stream(s) => s,
+                    PlanOutput::Text(t) => Box::pin(stream! { yield t.clone() }),
                 };
-                while let Some(chunk) = model_stream.next().await {
+                let mut buffer = String::new();
+                while let Some(chunk) = plan_stream.next().await {
+                    buffer.push_str(&chunk);
                     yield chunk;
                 }
-            } else {
-                let text = model.async_generate(messages).await;
-                yield text;
+                let plan_for_generation = format!(
+                    "Here are the facts I know and the plan of action that I will follow to solve the task:\n```\n{}\n```",
+                    buffer
+                );
+                info!("Plan for generation (step {}): {}", step, plan_for_generation);
+
+                // Generation phase
+                let mut messages = Vec::new();
+                messages.push(HashMap::from([
+                    ("role".into(), "system".into()),
+                    ("content".into(), plan_for_generation.clone()),
+                ]));
+                messages.push(HashMap::from([
+                    ("role".into(), "user".into()),
+                    ("content".into(), task_str.clone()),
+                ]));
+
+                if stream_outputs {
+                    match model.async_generate_stream(messages.clone()).await {
+                        Ok(mut gen_stream) => {
+                            while let Some(res) = gen_stream.next().await {
+                                let chunk = String::from_utf8_lossy(&res.unwrap_or_default()).to_string();
+                                yield chunk;
+                            }
+                        }
+                        Err(err) => {
+                            info!("Generation stream error: {:?}", err);
+                            yield String::new();
+                        }
+                    }
+                } else {
+                    let text = model.async_generate(messages).await;
+                    yield text;
+                }
+                info!("Step {} completed", step);
             }
-        };
-        Box::pin(combined)
+        })
     }
 
     async fn step(&self, _state: &str) -> String {
