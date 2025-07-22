@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use std::fmt;
 use serde_json::{Map, Value};
 use async_openai::{
     types::{
@@ -11,6 +9,11 @@ use async_openai::{
 };
 use tracing::info;
 use crate::prompts::load_config;
+use std::{
+    fmt,
+    any::{Any, TypeId},
+    collections::HashMap
+};
 
 trait ToolBase {
     fn dict(&self) -> HashMap<String, Value>;
@@ -23,6 +26,9 @@ trait TimeBase {
 trait MemoryStep {
     fn dict(&self) -> HashMap<String, Value>;
     fn to_message(&self, summary_mode: bool) -> Vec<ChatCompletionRequestMessage>;
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 trait AgentMemoryBase {
@@ -97,6 +103,12 @@ pub enum Step {
 pub struct AgentMemory {
     pub system_prompt: SystemPromptStep,
     pub steps: Vec<Step>,
+}
+
+type Callback = Box<dyn Fn(&dyn MemoryStep)>;
+
+pub struct CallbackRegistry {
+    callbacks: HashMap<TypeId, Vec<Callback>>,
 }
 
 impl TimeBase for Timing {
@@ -487,6 +499,52 @@ impl AgentMemoryBase for AgentMemory {
     }
 
     fn return_full_code(&self) -> String {
-        todo!()
+        let full_code: Vec<String> = self.steps.iter()
+            .filter_map(|step| {
+                if let Step::Action(action_step) = step {
+                    action_step.code_action.clone()
+                } else {
+                    None
+                }
+            })
+            .collect();
+        full_code.join("\n\n")
+    }
+}
+
+
+impl CallbackRegistry {
+    pub fn new() -> Self {
+        Self { callbacks: HashMap::new() }
+    }
+
+    pub fn register<S, F>(&mut self, callback: F)
+    where
+        S: MemoryStep + 'static,
+        F: Fn(&S) + 'static,
+    {
+        // Box<dyn Fn(&dyn MemoryStep)> 형태로 래핑
+        let wrapped: Callback = Box::new(move |step: &dyn MemoryStep| {
+            // 실제로는 S 타입인지 downcast 후 호출
+            if let Some(s) = step.as_any().downcast_ref::<S>() {
+                callback(s);
+            }
+        });
+
+        self
+            .callbacks
+            .entry(TypeId::of::<S>())
+            .or_default()
+            .push(wrapped);
+    }
+
+    /// 등록된 콜백 모두 실행
+    pub fn callback(&self, memory_step: &dyn MemoryStep) {
+        let tid = memory_step.as_any().type_id();
+        if let Some(cbs) = self.callbacks.get(&tid) {
+            for cb in cbs {
+                cb(memory_step);
+            }
+        }
     }
 }
