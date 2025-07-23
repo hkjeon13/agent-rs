@@ -31,7 +31,7 @@ trait MemoryStep {
     }
 }
 
-trait AgentMemoryBase {
+pub trait AgentMemoryBase {
     fn reset(&mut self);
     fn get_succinct_steps(&self) -> Vec<Value>;
     fn get_full_steps(&self) -> Vec<Value>;
@@ -538,7 +538,6 @@ impl CallbackRegistry {
             .push(wrapped);
     }
 
-    /// 등록된 콜백 모두 실행
     pub fn callback(&self, memory_step: &dyn MemoryStep) {
         let tid = memory_step.as_any().type_id();
         if let Some(cbs) = self.callbacks.get(&tid) {

@@ -10,7 +10,9 @@ use std::collections::HashMap;
 use std::pin::Pin;
 use std::time::Instant;
 use tracing::info;
-
+use crate::memory::{AgentMemory, SystemPromptStep};
+use crate::memory::AgentMemoryBase;
+use tokio::sync::Mutex;
 /// Represents either a streaming or text result from planning.
 pub enum PlanOutput {
     Stream(Pin<Box<dyn Stream<Item = String> + Send>>),
@@ -19,7 +21,7 @@ pub enum PlanOutput {
 
 #[async_trait]
 pub trait AgentBase {
-    async fn run(self: Arc<Self>, input: String) -> Pin<Box<dyn Stream<Item = String> + Send + 'static>>;
+    async fn run(self: Arc<Self>, input: String, reset:bool) -> Pin<Box<dyn Stream<Item = String> + Send + 'static>>;
     async fn _run_stream(
         self: Arc<Self>,
         task: String,
@@ -34,6 +36,7 @@ pub struct Agent<M: Model> {
     model: M,
     max_steps: usize,
     prompt: Prompt,
+    agent_memory: Mutex<AgentMemory>,
     available_actions: Vec<Box<dyn Action>>,
     stream_outputs: bool,
     interrupt_switch: bool,
@@ -48,10 +51,15 @@ impl<M: Model> Agent<M> {
         stream_outputs: bool,
     ) -> Self {
         let prompt = load_config("data/toolcalling_agent.yaml");
+        let agent_memory = Mutex::new(AgentMemory{
+            system_prompt: SystemPromptStep{system_prompt: prompt.system_prompt.clone()},
+            steps: vec![],
+        });
         Self {
             model,
             max_steps,
             prompt,
+            agent_memory,
             available_actions,
             stream_outputs,
             interrupt_switch: false,
@@ -62,8 +70,16 @@ impl<M: Model> Agent<M> {
 
 #[async_trait]
 impl<M: Model + Send + Sync + Clone + 'static> AgentBase for Agent<M> {
-    async fn run(self: Arc<Self>, query: String) -> Pin<Box<dyn Stream<Item = String> + Send + 'static>> {
+    async fn run(self: Arc<Self>, query: String, reset:bool) -> Pin<Box<dyn Stream<Item = String> + Send + 'static>> {
         info!("Agent::run() called with query: {}", query);
+        if reset {
+            info!("Resetting agent memory");
+            let mut memory = self.agent_memory.lock().await;
+            memory.reset();
+        } else {
+            info!("Continuing with existing agent memory");
+        }
+
         let agent = self.clone();
         let max_steps = agent.max_steps;
         agent._run_stream(query.clone(), max_steps, vec![]).await

@@ -152,7 +152,7 @@ async fn chat(
 
     // Execute the agent, which yields a stream of text chunks
     let query = input.query.clone();
-    let mut stream = state.agent.clone().run(query).await;
+    let mut stream = state.agent.clone().run(query, true).await;
 
     if input.stream {
         // Stream chunks directly as SSE-like plain text
