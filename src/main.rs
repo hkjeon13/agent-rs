@@ -145,11 +145,12 @@ async fn chat(
     State(state): State<Arc<AppState>>,
     Json(input): Json<ChatInput>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
+
     info!(
         "Processing chat: Session ID: {}, Chat ID: {}, Name: {}",
         input.session_id, input.chat_id, input.name
     );
-
+    let start_time = std::time::Instant::now();
     // Execute the agent, which yields a stream of text chunks
     let query = input.query.clone();
     let mut stream = state.agent.clone().run(query, true).await;
@@ -173,5 +174,11 @@ async fn chat(
         .header("Content-Type", "text/plain")
         .body(Body::from(full_text))
         .unwrap();
+
+    info!(
+        "Chat response generated successfully for session: {} (elapsed: {:.2?})",
+        input.session_id, start_time.elapsed()
+    );
+
     Ok(response)
 }

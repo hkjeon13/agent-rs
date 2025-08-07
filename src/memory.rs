@@ -8,7 +8,6 @@ use async_openai::{
     }
 };
 use tracing::info;
-use crate::prompts::load_config;
 use std::{
     fmt,
     any::{Any, TypeId},
@@ -23,12 +22,10 @@ trait TimeBase {
     fn duration(&self) -> i32;
 }
 
-trait MemoryStep {
+trait MemoryStep: Any {
     fn dict(&self) -> HashMap<String, Value>;
     fn to_message(&self, summary_mode: bool) -> Vec<ChatCompletionRequestMessage>;
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
+    fn as_any(&self) -> &dyn Any;
 }
 
 pub trait AgentMemoryBase {
@@ -313,6 +310,10 @@ impl MemoryStep for ActionStep {
 
         messages
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 
@@ -377,6 +378,10 @@ impl MemoryStep for PlanningStep {
             messages
         }
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 impl MemoryStep for TaskStep {
@@ -416,6 +421,10 @@ impl MemoryStep for TaskStep {
 
         messages
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 impl MemoryStep for SystemPromptStep {
@@ -436,6 +445,10 @@ impl MemoryStep for SystemPromptStep {
                 .into()]
         }
     }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
 }
 
 impl MemoryStep for FinalAnswerStep {
@@ -455,6 +468,10 @@ impl MemoryStep for FinalAnswerStep {
                 .expect("Failed to build user message for final answer")
                 .into()]
         }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 
